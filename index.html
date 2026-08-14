@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Intellisearch — Semantic Search Engine</title>
+<link rel="icon" href="/icon.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0a0a0f;
+    --surface:   #111118;
+    --surface2:  #18181f;
+    --border:    #2a2a35;
+    --accent:    #6ee7b7;      /* emerald */
+    --accent2:   #818cf8;      /* indigo  */
+    --accent3:   #f472b6;      /* pink    */
+    --text:      #e8e8f0;
+    --muted:     #6b6b7e;
+    --tfidf-col: #6ee7b7;
+    --w2v-col:   #818cf8;
+    --radius:    12px;
+    --font-head: 'Syne', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+  }
+
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Grid noise background ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(110,231,183,.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(110,231,183,.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Glow blobs ── */
+  .blob {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: .15;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .blob-1 { width: 500px; height: 500px; background: var(--accent);  top: -100px; left: -100px; }
+  .blob-2 { width: 400px; height: 400px; background: var(--accent2); bottom: 50px; right: -80px; }
+
+  main { position: relative; z-index: 1; max-width: 960px; margin: 0 auto; padding: 60px 24px 120px; }
+
+  /* ── Header ── */
+  header { text-align: center; margin-bottom: 56px; }
+  .logo {
+    font-family: var(--font-head);
+    font-size: clamp(2.4rem, 6vw, 3.8rem);
+    font-weight: 800;
+    letter-spacing: -.03em;
+    background: linear-gradient(130deg, var(--accent) 0%, var(--accent2) 60%, var(--accent3) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .tagline {
+    margin-top: 10px;
+    font-size: .85rem;
+    color: var(--muted);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+
+  /* ── Health pill ── */
+  #health-bar {
+    display: flex; align-items: center; justify-content: center; gap: 18px;
+    margin-top: 20px; flex-wrap: wrap;
+  }
+  .pill {
+    font-size: .7rem; letter-spacing: .08em; text-transform: uppercase;
+    padding: 4px 12px; border-radius: 20px; border: 1px solid;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .pill.ok   { border-color: var(--accent);  color: var(--accent);  }
+  .pill.warn { border-color: #f59e0b;         color: #f59e0b;        }
+  .pill.off  { border-color: var(--muted);    color: var(--muted);   }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  /* ── Search form ── */
+  .search-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 28px 28px 24px;
+    margin-bottom: 32px;
+  }
+
+  .input-row {
+    display: flex; gap: 12px; align-items: stretch;
+  }
+  #query-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    font-family: var(--font-mono);
+    font-size: .95rem;
+    color: var(--text);
+    outline: none;
+    transition: border-color .2s;
+  }
+  #query-input::placeholder { color: var(--muted); }
+  #query-input:focus { border-color: var(--accent); }
+
+  .search-btn {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: var(--radius);
+    padding: 14px 28px;
+    font-family: var(--font-head);
+    font-weight: 700;
+    font-size: .9rem;
+    letter-spacing: .04em;
+    cursor: pointer;
+    transition: background .2s, transform .1s;
+    white-space: nowrap;
+  }
+  .search-btn:hover  { background: #a7f3d0; }
+  .search-btn:active { transform: scale(.97); }
+
+  /* ── Controls row ── */
+  .controls {
+    display: flex; gap: 14px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+
+  .seg-control {
+    display: flex; gap: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .seg-btn {
+    font-family: var(--font-mono);
+    font-size: .78rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: 7px 16px;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .seg-btn.active {
+    background: var(--accent);
+    color: #000;
+    font-weight: 500;
+  }
+  .seg-btn.active.w2v   { background: var(--accent2); color: #fff; }
+  .seg-btn.active.both  { background: linear-gradient(90deg, var(--tfidf-col), var(--w2v-col)); color: #000; }
+
+  .top-k-label { color: var(--muted); font-size: .78rem; letter-spacing: .04em; }
+  #top-k {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 10px;
+    font-family: var(--font-mono);
+    font-size: .78rem;
+    color: var(--text);
+    outline: none;
+    width: 64px;
+    transition: border-color .2s;
+  }
+  #top-k:focus { border-color: var(--accent2); }
+
+  /* ── Status / loading ── */
+  #status {
+    text-align: center; color: var(--muted);
+    font-size: .82rem; letter-spacing: .06em;
+    min-height: 24px; margin-bottom: 12px;
+  }
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Results ── */
+  #results { display: flex; flex-direction: column; gap: 16px; }
+
+  /* Compare mode: side by side */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 640px) { .compare-grid { grid-template-columns: 1fr; } }
+
+  .compare-col h3 {
+    font-family: var(--font-head);
+    font-size: .9rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .badge-tfidf { color: var(--tfidf-col); }
+  .badge-w2v   { color: var(--w2v-col);   }
+
+  /* ── Result card ── */
+  .result-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    transition: border-color .2s, transform .15s;
+    animation: fadeUp .3s ease both;
+  }
+  .result-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .result-card:nth-child(1) { animation-delay: .05s; }
+  .result-card:nth-child(2) { animation-delay: .10s; }
+  .result-card:nth-child(3) { animation-delay: .15s; }
+  .result-card:nth-child(4) { animation-delay: .20s; }
+  .result-card:nth-child(5) { animation-delay: .25s; }
+
+  .card-header {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    margin-bottom: 10px;
+  }
+  .rank-badge {
+    min-width: 26px; height: 26px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-head);
+    font-size: .75rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .rank-1 { background: var(--accent);  color: #000; }
+  .rank-2 { background: #3b3b50;        color: #a0a0b8; }
+  .rank-3 { background: #2e2e40;        color: #8080a0; }
+  .rank-n { background: var(--surface2); color: var(--muted); }
+
+  .card-title {
+    font-family: var(--font-head);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+    line-height: 1.35;
+  }
+
+  .score-chip {
+    font-size: .72rem;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .card-snippet {
+    font-size: .82rem;
+    color: var(--muted);
+    line-height: 1.6;
+    border-left: 2px solid var(--border);
+    padding-left: 12px;
+    margin-top: 8px;
+  }
+
+  /* ── Empty / error state ── */
+  .empty-state {
+    text-align: center;
+    padding: 60px 0;
+    color: var(--muted);
+    font-size: .85rem;
+    letter-spacing: .06em;
+  }
+  .empty-state .icon { font-size: 2.5rem; margin-bottom: 12px; display: block; }
+
+  .error-msg {
+    background: #1e0a0a;
+    border: 1px solid #7f1d1d;
+    color: #fca5a5;
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    font-size: .85rem;
+  }
+</style>
+</head>
+<body>
+<div class="blob blob-1"></div>
+<div class="blob blob-2"></div>
+
+<main>
+  <!-- ── Header ── -->
+  <header>
+    <div class="logo">Intellisearch</div>
+    <div class="tagline">TF-IDF · Word2Vec · Wikipedia Corpus</div>
+
+    <div id="health-bar">
+      <span class="pill off" id="pill-docs"><span class="dot"></span>Loading…</span>
+      <span class="pill off" id="pill-tfidf"><span class="dot"></span>TF-IDF</span>
+      <span class="pill off" id="pill-w2v"><span class="dot"></span>Word2Vec</span>
+    </div>
+  </header>
+
+  <!-- ── Search card ── -->
+  <div class="search-card">
+    <div class="input-row">
+      <input id="query-input" type="text"
+             placeholder="e.g. climate change effects, machine learning applications…"
+             autocomplete="off" spellcheck="false" />
+      <button class="search-btn" id="search-btn" onclick="runSearch()">Search</button>
+    </div>
+
+    <div class="controls">
+      <!-- Model selector -->
+      <div class="seg-control">
+        <button class="seg-btn active" id="btn-tfidf" onclick="setModel('tfidf')">TF-IDF</button>
+        <button class="seg-btn"        id="btn-w2v"   onclick="setModel('w2v')">Word2Vec</button>
+        <button class="seg-btn"        id="btn-both"  onclick="setModel('compare')">Compare</button>
+      </div>
+
+      <!-- Top-K -->
+      <span class="top-k-label">Top</span>
+      <input id="top-k" type="number" min="1" max="20" value="5" />
+      <span class="top-k-label">results</span>
+    </div>
+  </div>
+
+  <!-- ── Status ── -->
+  <div id="status"></div>
+
+  <!-- ── Results ── -->
+  <div id="results">
+    <div class="empty-state">
+      <span class="icon">⌕</span>
+      Enter a query above and press Search
+    </div>
+  </div>
+</main>
+
+<script>
+let activeModel = 'tfidf';
+
+// ── Model toggle ─────────────────────────────────────────────────────────────
+function setModel(m) {
+  activeModel = m;
+  document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active','w2v','both'));
+  const mapping = { tfidf: 'btn-tfidf', w2v: 'btn-w2v', compare: 'btn-both' };
+  const btn = document.getElementById(mapping[m]);
+  btn.classList.add('active');
+  if (m === 'w2v')     btn.classList.add('w2v');
+  if (m === 'compare') btn.classList.add('both');
+}
+
+// ── Health check ─────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch('/health');
+    const d = await r.json();
+    const dp = document.getElementById('pill-docs');
+    dp.className = 'pill ok';
+    dp.innerHTML = `<span class="dot"></span>${d.documents.toLocaleString()} docs`;
+
+    const tp = document.getElementById('pill-tfidf');
+    tp.className = d.tfidf_loaded ? 'pill ok' : 'pill warn';
+    tp.innerHTML = `<span class="dot"></span>TF-IDF ${d.tfidf_loaded ? '✓' : '✗'}`;
+
+    const wp = document.getElementById('pill-w2v');
+    wp.className = d.w2v_loaded ? 'pill ok' : 'pill warn';
+    wp.innerHTML = `<span class="dot"></span>Word2Vec ${d.w2v_loaded ? '✓' : '✗'}`;
+  } catch(e) {
+    document.getElementById('pill-docs').className  = 'pill warn';
+    document.getElementById('pill-docs').innerHTML  = '<span class="dot"></span>API offline';
+  }
+}
+
+// ── Safe JSON parse (never throws on non-JSON bodies) ────────────────────────
+async function safeJson(response) {
+  const text = await response.text();
+  try { return JSON.parse(text); }
+  catch { return { detail: text || `HTTP ${response.status}` }; }
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+async function runSearch() {
+  const query = document.getElementById('query-input').value.trim();
+  if (!query) return;
+  const top_k = parseInt(document.getElementById('top-k').value) || 5;
+
+  setStatus('<span class="spinner"></span>Searching…');
+  document.getElementById('results').innerHTML = '';
+
+  try {
+    if (activeModel === 'compare') {
+      const r   = await fetch('/compare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, top_k })
+      });
+      const d = await safeJson(r);
+      if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+      renderCompare(d);
+      setStatus(`Comparison for "${query}" — ${d.tfidf.length + d.w2v.length} results`);
+    } else {
+      const r = await fetch('/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, model: activeModel, top_k })
+      });
+      const d = await safeJson(r);
+      if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+      renderResults(d.results, activeModel);
+      setStatus(`${d.results.length} results for "${query}" · ${activeModel.toUpperCase()}`);
+    }
+  } catch(e) {
+    document.getElementById('results').innerHTML =
+      `<div class="error-msg">⚠ ${escHtml(e.message)}</div>`;
+    setStatus('');
+  }
+}
+
+// ── Render helpers ────────────────────────────────────────────────────────────
+function rankClass(n) {
+  return n === 1 ? 'rank-1' : n === 2 ? 'rank-2' : n === 3 ? 'rank-3' : 'rank-n';
+}
+
+function cardHTML(res) {
+  return `
+    <div class="result-card">
+      <div class="card-header">
+        <div class="rank-badge ${rankClass(res.rank)}">${res.rank}</div>
+        <div class="card-title">${escHtml(res.title)}</div>
+        <div class="score-chip">${res.score.toFixed(4)}</div>
+      </div>
+      <div class="card-snippet">${escHtml(res.snippet)}…</div>
+    </div>`;
+}
+
+function renderResults(results, model) {
+  const el = document.getElementById('results');
+  if (!results.length) {
+    el.innerHTML = '<div class="empty-state"><span class="icon">∅</span>No results found</div>';
+    return;
+  }
+  el.innerHTML = results.map(cardHTML).join('');
+}
+
+function renderCompare(data) {
+  const el = document.getElementById('results');
+  const tfidfCol = `
+    <div class="compare-col">
+      <h3><span class="badge-tfidf">◈</span> <span class="badge-tfidf">TF-IDF</span></h3>
+      ${data.tfidf.length ? data.tfidf.map(cardHTML).join('') : '<div class="empty-state">No results</div>'}
+    </div>`;
+  const w2vCol = `
+    <div class="compare-col">
+      <h3><span class="badge-w2v">◈</span> <span class="badge-w2v">Word2Vec</span></h3>
+      ${data.w2v.length ? data.w2v.map(cardHTML).join('') : '<div class="empty-state">No results</div>'}
+    </div>`;
+  el.innerHTML = `<div class="compare-grid">${tfidfCol}${w2vCol}</div>`;
+}
+
+function setStatus(html) {
+  document.getElementById('status').innerHTML = html;
+}
+
+function escHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Enter key ──────────────────────────────────────────────────────────────────
+document.getElementById('query-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') runSearch();
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+checkHealth();
+</script>
+</body>
+</html>
